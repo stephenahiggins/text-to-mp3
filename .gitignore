@@ -1,0 +1,17 @@
+.venv/
+.tools/
+.data/
+models/*
+!models/.gitkeep
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+.pytest_cache/
+*.log
+.DS_Store
+.env
+.env.*
+*.mp3
+*.wav
+*.sqlite3
+*.sqlite3-*
