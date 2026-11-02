@@ -51,6 +51,13 @@ def get(job_id):
     return dict(row)
 
 
+def article_parts(article):
+    if 'documents' not in article:
+        return chunks(article['prepared'])
+    from backend.narration import stack_parts
+    return stack_parts(article)
+
+
 def worker():
     while not stop.is_set():
         try:
@@ -65,12 +72,13 @@ def worker():
             cancellations[job_id] = cancelled
             update(job_id, status='running', error='')
             article = json.loads(job['article'])
-            parts = chunks(article['prepared'])
+            parts = article_parts(article)
             update(job_id, total=len(parts), completed=0)
             paths = []
             for index, part in enumerate(parts):
                 if stop.is_set() or cancelled.is_set():
                     break
+                update(job_id, current_document=part.get('document', 1))
                 paths.append(engine.render(part, job['voice'], job['speed'], CACHE))
                 update(job_id, completed=index+1)
             else:
@@ -84,7 +92,7 @@ def worker():
                     output.unlink(missing_ok=True)
                     output.with_suffix('.json').unlink(missing_ok=True)
                 else:
-                    update(job_id, status='completed', output=str(output))
+                    update(job_id, status='completed', output=str(output), generated_at=time.time())
         except Exception as exc:
             logging.exception('Conversion %s failed', job_id)
             if get(job_id)['status'] not in ('cancelled', 'queued'):
@@ -100,6 +108,8 @@ async def lifespan(app):
     logging.getLogger().addHandler(logging.FileHandler(DATA / 'application.log'))
     with db() as conn:
         conn.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, article TEXT, voice TEXT, speed REAL, status TEXT, total INTEGER DEFAULT 0, completed INTEGER DEFAULT 0, output TEXT DEFAULT "", error TEXT DEFAULT "", created REAL)')
+        from backend.stacks import migrate
+        migrate(conn)
         conn.execute("UPDATE jobs SET status='queued' WHERE status IN ('running','encoding')")
         pending = conn.execute("SELECT id FROM jobs WHERE status='queued' ORDER BY created").fetchall()
     # Cache is reusable for 30 days; partial writes are never reused.
@@ -118,7 +128,7 @@ async def lifespan(app):
     await asyncio.to_thread(thread.join, 5)
 
 
-app = FastAPI(title='Article Voice', lifespan=lifespan)
+app = FastAPI(title='Article Stacks', lifespan=lifespan)
 
 
 @app.middleware('http')
@@ -183,12 +193,16 @@ async def ingestion(source: Source):
 @app.post('/api/import')
 async def import_file(file: UploadFile = File(...)):
     extension = Path(file.filename or '').suffix.lower()
-    if extension not in ('.html','.htm','.md','.txt'):
-        raise HTTPException(400, 'Choose an HTML, Markdown or TXT file')
-    content = await file.read(2_000_001)
-    if len(content) > 2_000_000:
-        raise HTTPException(400, 'File exceeds 2 MB')
+    if extension not in ('.html','.htm','.md','.txt','.pdf','.docx'):
+        raise HTTPException(400, 'Choose An HTML, Markdown, TXT, PDF Or DOCX File')
+    content = await file.read(20_000_001)
+    if len(content) > 20_000_000:
+        raise HTTPException(400, 'File Exceeds 20 MB')
     try:
+        if extension in ('.pdf','.docx'):
+            from backend.imports import document_text
+            text = await asyncio.to_thread(document_text, content, extension)
+            return finish(extract(text, title=Path(file.filename).stem))
         return await asyncio.to_thread(lambda: finish(extract(content.decode('utf-8-sig'), 'html' if extension in ('.html','.htm') else 'md' if extension=='.md' else 'text', Path(file.filename).stem)))
     except Exception as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -246,7 +260,12 @@ def cancel(job_id: str):
 
 @app.post('/api/jobs/{job_id}/retry')
 def retry(job_id: str):
-    if get(job_id)['status'] not in ('failed','cancelled'):
+    job = get(job_id)
+    if job.get('stack_id'):
+        with db() as conn:
+            active = conn.execute("SELECT id FROM jobs WHERE stack_id=? AND status IN ('queued','running','encoding')", (job['stack_id'],)).fetchone()
+            if active: raise HTTPException(409, 'This Stack Is Already Being Audiofied')
+    if job['status'] not in ('failed','cancelled'):
         raise HTTPException(409, 'Only failed or cancelled conversions can be resumed')
     update(job_id, status='queued', error='')
     jobs.put(job_id)
@@ -269,6 +288,10 @@ def reveal(job_id: str):
     subprocess.run(['open', '-R', job['output']], check=True)
     return {'ok': True}
 
+
+import sys
+from backend.stacks import register
+register(app, sys.modules[__name__])
 
 if (ROOT/'frontend/dist').exists():
     app.mount('/', StaticFiles(directory=ROOT/'frontend/dist', html=True), name='frontend')

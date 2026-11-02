@@ -1,6 +1,12 @@
-# Article Voice
+# Article Stacks
 
 A local article-to-MP3 application for Apple Silicon macOS. Paste a public Substack/article URL, paste text, or import HTML, Markdown or TXT. Review and edit the narration, select a British narrator, then generate a tagged MP3 for your iPhone.
+
+## Stacks
+
+Click New Stack and rename its title inline, then add public URLs, pasted text, or HTML, Markdown, TXT, text-based PDF and Word (.docx) files. Multiple file imports are supported. Scans and images need narration text supplied through Paste Text. Review and edit documents, reorder them, or remove them. Additions and ordering are saved immediately; document edits use Save Changes. Saved Stacks survive browser and backend restarts. Drag Stack cards to reorder them, or use Alt + Arrow keys while a card is focused. Cards show creation dates and audio status: green for current audio, amber for changes since generation, and black when no audio exists. Completed audio shows its last generation time.
+
+Choose a voice and speed, then Create Audio to produce one MP3 in document order, beginning with the Stack title, then each document’s title and date (when available), with pauses between documents. The job captures an immutable snapshot, so you can keep adding to the Stack during generation. A successful matching version marks the Stack Audiofied. Subsequent edits mark the audio as needing an update; Regenerate Audio retains older versions while reusing cached chunks. Existing conversions migrate automatically to single-document Stacks.
 
 ## Start
 
@@ -79,3 +85,5 @@ Tests cover HTML/Markdown extraction and metadata, preparation, sentence/paragra
 Initial benchmark on this Mac: model loading and fingerprints 0.79 seconds, two original-prose chunks synthesised in 3.64 seconds for about 16.48 seconds of encoded audio (~4.5× real time). This is a short smoke benchmark, not a measured full-article throughput guarantee. Public Substack URL extraction was also verified (3,015 words with title, author, publication and date). A 20,000+ word article was verified for chunk integrity; full-length audio rendering was not benchmarked.
 
 Stretch features (Share Sheet, folder watching, M4B chapters and automatic iPhone transfer) are not implemented.
+
+Document dates can be reviewed or entered through Edit. Full dates are announced in British spoken order (for example, “the second of November, 2026”). Missing dates are omitted; upload dates are never substituted. Regenerate existing audio to include the new introductions.

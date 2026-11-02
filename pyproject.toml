@@ -2,7 +2,7 @@
 name = "article-voice"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["fastapi>=0.115", "uvicorn>=0.30", "trafilatura>=2", "httpx>=0.28", "kokoro-onnx==0.4.9", "soundfile>=0.13", "numpy>=2", "beautifulsoup4>=4.12", "markdown>=3.7", "python-multipart>=0.0.20", "pysbd>=0.3.4"]
+dependencies = ["fastapi>=0.115", "uvicorn>=0.30", "trafilatura>=2", "httpx>=0.28", "kokoro-onnx==0.4.9", "soundfile>=0.13", "numpy>=2", "beautifulsoup4>=4.12", "markdown>=3.7", "python-multipart>=0.0.20", "pysbd>=0.3.4", "pypdf>=5", "python-docx>=1.1"]
 [dependency-groups]
 dev = ["pytest>=8"]
 [tool.pytest.ini_options]
