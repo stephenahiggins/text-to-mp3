@@ -16,3 +16,17 @@
 .stack-entry{border:1px solid #d8ded2;border-radius:7px;margin-top:10px;overflow:hidden}.stack-entry.chosen{background:#eaf0e5;border-color:#9bae90}.stack-entry .stack-link{border:0;margin:0;border-radius:0;min-width:0;padding-bottom:8px}.stack-order{display:flex;gap:6px;padding:0 12px 10px}.stack-order button{padding:4px 12px}.audio-status{display:block;font-size:11px;line-height:1.5;margin:8px 0}.audio-status small{display:block;font-size:10px;color:#657068;margin-top:3px}.audio-status.none,.stack-link .audio-status.none{color:#252525}.audio-status.current,.stack-link .audio-status.current{color:#287342}.audio-status.outdated,.stack-link .audio-status.outdated{color:#926000}.stack-link .audio-status-label{color:inherit;margin:0}.audio-status b{font-size:13px}@media(max-width:850px){.stack-entry{min-width:220px;flex:0 0 220px}}
 
 .stack-entry,.stack-entry .stack-link{cursor:grab}.stack-entry:active,.stack-entry:active .stack-link{cursor:grabbing}.stack-entry.dragging{opacity:.45}.stack-entry.drop-target{outline:2px solid #547362;outline-offset:3px}.stack-entry .stack-link{padding-bottom:15px}
+
+.document[draggable=true]{cursor:grab}.document[draggable=true]:active{cursor:grabbing}.document.dragging{opacity:.45}.document.drop-target{outline:2px solid #547362;outline-offset:2px;background:#eaf0e5}.document-grip{font:20px sans-serif;color:#7b8977}.document h3:focus-visible{outline:2px solid #9bae90;outline-offset:4px}
+
+.phone-transfer{display:contents}.phone-transfer-panel{flex-basis:100%;max-width:480px;padding:20px;border:1px solid #cbd1c1;border-radius:12px;background:#f7f8f2;display:flex;flex-direction:column;align-items:flex-start;gap:12px}.phone-transfer-panel p{margin:0}.phone-transfer-panel input{width:100%;font-size:12px}.phone-transfer-panel img{max-width:100%;height:auto}
+
+@media(min-width:851px){
+  .stack-sidebar{position:sticky;top:16px;display:flex;flex-direction:column;max-height:calc(100vh - 100px);max-height:calc(100dvh - 100px)}
+  .stack-sidebar>h2,.stack-sidebar>.new-stack-button{flex-shrink:0}
+  .stack-sidebar nav{min-height:0;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;padding:4px;margin:-4px}
+}
+
+.brand-logo{display:block;width:48px;height:48px;flex-shrink:0}
+
+.job .actions{flex-wrap:wrap;max-width:100%}.send-to-phone-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}.send-to-phone-button svg{flex-shrink:0}.phone-transfer-panel{width:100%;min-width:0}.jobTop:has(.phone-transfer-panel){align-items:flex-start;flex-wrap:wrap}.jobTop:has(.phone-transfer-panel)>.actions{width:100%}

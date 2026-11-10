@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "Reading Stacks",
+    "slug": "article-stacks",
+    "scheme": "articlestacks",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.articlestacks.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Download stacks from your Mac over your local Wi-Fi network.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.articlestacks.mobile",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true,
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan a stack transfer QR code on your Mac.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-document-picker",
+      "expo-sqlite"
+    ],
+    "icon": "./assets/reading-stacks.png"
+  }
+}

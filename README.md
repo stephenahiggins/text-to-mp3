@@ -1,4 +1,4 @@
-# Article Stacks
+# Reading Stacks
 
 A local article-to-MP3 application for Apple Silicon macOS. Paste a public Substack/article URL, paste text, or import HTML, Markdown or TXT. Review and edit the narration, select a British narrator, then generate a tagged MP3 for your iPhone.
 
@@ -10,14 +10,36 @@ Choose a voice and speed, then Create Audio to produce one MP3 in document order
 
 ## Start
 
-From this directory:
+From the repository root, `make help` lists the supported commands.
 
 ```sh
-./scripts/setup.sh   # first run: install dependencies, download weights, build UI
-./scripts/start.sh   # subsequent runs, including offline
+make setup          # First run: Mac dependencies, model weights and web build
+make setup-mobile   # First run: Expo dependencies and the native build patch
+make start          # Build and run the local web app in the background
+make simulator      # Start local app + Expo; build/install/open the iOS simulator app
+make status         # Check which services are running
+make stop           # Stop the local app and Expo started by Make
 ```
 
-Open http://127.0.0.1:8765. The launcher opens your default browser automatically. Stop the server with Control-C. Only run one backend process against a data directory; the queue deliberately uses a single worker and a single model instance.
+Open http://127.0.0.1:8765 for the Mac app. `make simulator` accepts
+`SIMULATOR="iPhone 17 Pro"` to select a simulator. The first native build can take
+several minutes. Xcode and an installed iOS simulator runtime are required.
+`make expo` starts only Metro; `make stop-expo` stops only Metro. For an already
+installed simulator build, `make simulator-open` runs an interactive Expo session;
+stop that foreground session with Ctrl-C rather than `make stop`.
+
+To install on a connected iPhone, use `make device` (or `make device DEVICE="name or UDID"`).
+This creates a Release build with bundled JavaScript, so playback does not depend
+on Metro. Xcode signing with your Apple Account, device trust and Developer Mode
+must be configured. This command installs locally; it does not publish to TestFlight
+or the App Store. See [mobile setup and transfer instructions](mobile/README.md).
+
+Managed service logs and PID records live in `.data/services/`. `make stop` only
+stops processes launched by these commands and leaves the Simulator app open.
+If a port is already occupied by an older `./scripts/start.sh` or Expo session,
+stop it with Ctrl-C in its original terminal first. Only run one backend against
+a data directory. The original `./scripts/start.sh` remains available for a
+foreground, offline-capable launch; stop it with Ctrl-C.
 
 Prerequisites: macOS Apple Silicon, Python 3.11+ (tested with 3.12), Node.js 20.19+ or 22.12+, and FFmpeg. Install missing tools with Homebrew:
 
@@ -84,6 +106,15 @@ Tests cover HTML/Markdown extraction and metadata, preparation, sentence/paragra
 
 Initial benchmark on this Mac: model loading and fingerprints 0.79 seconds, two original-prose chunks synthesised in 3.64 seconds for about 16.48 seconds of encoded audio (~4.5× real time). This is a short smoke benchmark, not a measured full-article throughput guarantee. Public Substack URL extraction was also verified (3,015 words with title, author, publication and date). A 20,000+ word article was verified for chunk integrity; full-length audio rendering was not benchmarked.
 
-Stretch features (Share Sheet, folder watching, M4B chapters and automatic iPhone transfer) are not implemented.
+The React Native companion in [`mobile/`](mobile/README.md) supports iOS and Android.
+Click **Send to Phone** on completed audio and scan its QR code inside the mobile
+app to download over local Wi-Fi. **Export Stack** creates a portable `.stack`
+file with audio, source text and chapter metadata for the app's file importer.
+New recordings include article timestamps; regenerate older recordings to add
+them. The phone stores recordings for offline playback and remembers progress.
+The editor remains loopback-only; a separate scoped transfer service starts on
+port 8766 when needed. See the mobile README for setup, permissions and limits.
+
+Share Sheet extensions, folder watching, M4B chapters and cloud delivery are not implemented.
 
 Document dates can be reviewed or entered through Edit. Full dates are announced in British spoken order (for example, “the second of November, 2026”). Missing dates are omitted; upload dates are never substituted. Regenerate existing audio to include the new introductions.

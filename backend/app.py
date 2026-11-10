@@ -91,6 +91,7 @@ def worker():
                 if cancelled.is_set():
                     output.unlink(missing_ok=True)
                     output.with_suffix('.json').unlink(missing_ok=True)
+                    output.with_suffix('.chapters.json').unlink(missing_ok=True)
                 else:
                     update(job_id, status='completed', output=str(output), generated_at=time.time())
         except Exception as exc:
@@ -126,9 +127,10 @@ async def lifespan(app):
     yield
     stop.set()
     await asyncio.to_thread(thread.join, 5)
+    await asyncio.to_thread(mobile_transfers.close)
 
 
-app = FastAPI(title='Article Stacks', lifespan=lifespan)
+app = FastAPI(title='Reading Stacks', lifespan=lifespan)
 
 
 @app.middleware('http')
@@ -292,6 +294,8 @@ def reveal(job_id: str):
 import sys
 from backend.stacks import register
 register(app, sys.modules[__name__])
+from backend.mobile import register as register_mobile
+mobile_transfers = register_mobile(app, sys.modules[__name__])
 
 if (ROOT/'frontend/dist').exists():
     app.mount('/', StaticFiles(directory=ROOT/'frontend/dist', html=True), name='frontend')

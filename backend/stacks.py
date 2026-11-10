@@ -117,7 +117,7 @@ def register(app, core):
             if any(v['status'] in ('queued','running','encoding') for v in stack['versions']): raise HTTPException(409,'This Stack Is Already Being Audiofied')
             if not stack['items'] or any(not i['prepared'].strip() for i in stack['items']): raise HTTPException(400,'Add Readable Documents First')
             # Store the full snapshot: editing the draft cannot change queued audio.
-            article=dict(title=stack['name'],author='',publication='Article Stacks',url='',date='',original='\n\n'.join(i['original'] for i in stack['items']),prepared='\n\n'.join(i['prepared'] for i in stack['items']),documents=stack['items'])
+            article=dict(title=stack['name'],author='',publication='Reading Stacks',url='',date='',original='\n\n'.join(i['original'] for i in stack['items']),prepared='\n\n'.join(i['prepared'] for i in stack['items']),documents=stack['items'])
             jid=uuid.uuid4().hex
             total=len(core.article_parts(article))
             conn.execute('INSERT INTO jobs (id,article,voice,speed,status,total,created,stack_id,stack_revision) VALUES (?,?,?,?,?,?,?,?,?)',(jid,json.dumps(article),data.voice,data.speed,'queued',total,time.time(),sid,stack['revision']))

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Reading Stacks — a book and an ear</title>
+  <rect width="256" height="256" rx="0" fill="#f6f5ef"/>
+  <g fill="none" stroke="#274d3f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 88C102 69 73 68 42 75v111c32-8 60-5 86 14 26-19 54-22 86-14V75c-31-7-60-6-86 13Z"/>
+    <path d="M128 88v112M60 207c24-3 46 0 68 13 22-13 44-16 68-13"/>
+    <path d="M63 104c15-1 29 2 43 9M63 129c15-1 29 2 43 9M63 154c15-1 29 2 43 9" stroke-width="7"/>
+  </g>
+  <path d="M153 115c0-17 9-28 23-28 15 0 25 11 25 26 0 17-13 24-18 31-5 6-4 16-14 16-8 0-13-6-13-13M168 115c0-7 4-12 10-12 7 0 10 6 10 12 0 8-8 11-12 16" fill="none" stroke="#a47e51" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -94,6 +94,23 @@ def encode(paths, output, article):
         try:
             subprocess.run(command + [str(partial)], check=True, capture_output=True)
             os.replace(partial, output)
+            # Chunk WAVs include the spoken headings and all inserted pauses.
+            from backend.narration import stack_parts
+            parts = stack_parts(article) if 'documents' in article else []
+            chapters = []
+            elapsed = 0.0
+            for part, path in zip(parts, paths):
+                document = part['document']
+                if not chapters or chapters[-1]['document'] != document:
+                    chapters.append(dict(document=document, title=part['document_title'], start=elapsed))
+                elapsed += sf.info(path).duration
+            if chapters:
+                for index, chapter in enumerate(chapters):
+                    chapter['end'] = chapters[index + 1]['start'] if index + 1 < len(chapters) else elapsed
+                target = output.with_suffix('.chapters.json')
+                temp = target.with_suffix('.part.json')
+                temp.write_text(json.dumps(chapters), encoding='utf-8')
+                os.replace(temp, target)
         except subprocess.CalledProcessError as exc:
             raise RuntimeError('FFmpeg: ' + exc.stderr.decode(errors='replace')[-1500:]) from exc
         finally:
