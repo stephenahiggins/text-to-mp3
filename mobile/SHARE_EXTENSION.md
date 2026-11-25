@@ -113,3 +113,9 @@ including title/author metadata and readable word spacing. Later on 18 November,
 the signed Release build succeeded with refreshed App Group provisioning profiles,
 was installed on the physical iPhone 16 Pro, and launched successfully. End-to-end
 Safari capture and Wi-Fi delivery on the physical phone still require acceptance checks.
+
+## iCloud alternative
+
+Saved shares can also use a user-selected iCloud Drive folder instead of the LAN
+connection. See [iCloud setup and protocol](ICLOUD_SYNC.md). Folder selection and
+sync happen in the containing app; the extension continues saving locally first.

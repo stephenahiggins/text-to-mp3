@@ -9,7 +9,7 @@ if [[ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" == "1" ]]; then arch=
 xcrun --sdk iphonesimulator swiftc -D QUEUE_STORAGE_TESTS \
   -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
   -target "${arch}-apple-ios16.4-simulator" \
-  share-extension/ShareQueue.swift tests/QueueStorageTests.swift -o "$work/test"
+  share-extension/ShareQueue.swift share-extension/CloudStore.swift tests/QueueStorageTests.swift -o "$work/test"
 xcrun simctl spawn booted "$work/test" "$work/store" "$PWD/share-extension/Info.plist" init
 pids=()
 for i in 1 2 3 4; do

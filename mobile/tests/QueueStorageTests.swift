@@ -17,6 +17,28 @@ import Foundation
             print("PASS: concurrent processes preserved all shares across restart")
             return
         }
+        let cloudRoot = root.appendingPathComponent("cloud")
+        for directory in ["requests", "receipts", "recordings"] {
+            try FileManager.default.createDirectory(at: cloudRoot.appendingPathComponent(directory), withIntermediateDirectories: true)
+        }
+        let cloudID = UUID().uuidString.lowercased()
+        let body = try JSONSerialization.data(withJSONObject: ["id": cloudID, "stackId": "", "newStackName": "Cloud reading", "url": "https://example.com/read"])
+        _ = try CloudStore.exchange("/inbox", body: body, attempt: 1, root: cloudRoot, workspace: "workspace")
+        let request = try JSONSerialization.jsonObject(with: Data(contentsOf: cloudRoot.appendingPathComponent("requests/" + cloudID + ".json"))) as! [String: Any]
+        precondition(request["attempt"] as? Int == 1 && request["workspaceId"] as? String == "workspace")
+        func receipt(_ attempt: Int, _ status: String) throws {
+            try CloudStore.write(JSONSerialization.data(withJSONObject: ["id": cloudID, "attempt": attempt, "status": status, "error": ""]), to: cloudRoot.appendingPathComponent("receipts/" + cloudID + ".json"))
+        }
+        try receipt(0, "error")
+        let stale = try JSONDecoder().decode(Receipt.self, from: CloudStore.exchange("/inbox/" + cloudID, body: nil, attempt: 1, root: cloudRoot, workspace: "workspace"))
+        precondition(stale.status == "processing", "An old receipt must not fail a new retry")
+        try receipt(1, "complete")
+        let current = try JSONDecoder().decode(Receipt.self, from: CloudStore.exchange("/inbox/" + cloudID, body: nil, attempt: 1, root: cloudRoot, workspace: "workspace"))
+        precondition(current.status == "complete")
+        try FileManager.default.removeItem(at: cloudRoot.appendingPathComponent("receipts/" + cloudID + ".json"))
+        let pending = try JSONDecoder().decode(Receipt.self, from: CloudStore.exchange("/inbox/" + cloudID, body: nil, attempt: 1, root: cloudRoot, workspace: "workspace"))
+        precondition(pending.status == "processing", "A submitted share must survive a sleeping Mac")
+        print("PASS: coordinated iCloud writes, offline pending receipt and stale retry reconciliation")
         if CommandLine.arguments.count > 3 {
             let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2])), format: nil) as! [String: Any]
             let ext = plist["NSExtension"] as! [String: Any]

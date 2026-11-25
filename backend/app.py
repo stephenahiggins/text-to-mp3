@@ -146,7 +146,9 @@ async def lifespan(app):
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
     mobile_sharing.restore()
+    cloud_sync.start()
     yield
+    await asyncio.to_thread(cloud_sync.close)
     stop.set()
     await asyncio.to_thread(thread.join, 5)
     await asyncio.to_thread(mobile_transfers.close)
@@ -335,11 +337,14 @@ def reveal(job_id: str):
 
 import sys
 from backend.stacks import register
-register(app, sys.modules[__name__])
+create_stack_audio = register(app, sys.modules[__name__])
 from backend.mobile import register as register_mobile
 mobile_transfers = register_mobile(app, sys.modules[__name__])
 from backend.share import register as register_share
 mobile_sharing = register_share(app, sys.modules[__name__])
+
+from backend.cloud import register as register_cloud
+cloud_sync = register_cloud(app, sys.modules[__name__])
 
 if (ROOT/'frontend/dist').exists():
     app.mount('/', StaticFiles(directory=ROOT/'frontend/dist', html=True), name='frontend')

@@ -15,6 +15,7 @@ function addTarget(project, bundleId, appleTeamId) {
   const list = project.pbxXCConfigurationList()[target.pbxNativeTarget.buildConfigurationList];
   for (const ref of list.buildConfigurations) {
     Object.assign(project.pbxXCBuildConfigurationSection()[ref.value].buildSettings, {
+      PRODUCT_BUNDLE_IDENTIFIER: `${bundleId}.share`,
       INFOPLIST_FILE: `${name}/Info.plist`, CODE_SIGN_ENTITLEMENTS: `${name}/AddToStack.entitlements`,
       SWIFT_VERSION: '5.0', IPHONEOS_DEPLOYMENT_TARGET: '16.0', TARGETED_DEVICE_FAMILY: '"1,2"',
       APPLICATION_EXTENSION_API_ONLY: 'YES', GENERATE_INFOPLIST_FILE: 'NO',
@@ -33,7 +34,7 @@ function addTarget(project, bundleId, appleTeamId) {
     settings.SystemCapabilities['com.apple.ApplicationGroups'] = { enabled: 1 };
   }
   const group = project.getFirstProject().firstProject.mainGroup;
-  for (const [file, id] of [[`${name}/ShareViewController.swift`, target.uuid], [`${name}/ShareQueue.swift`, target.uuid],
+  for (const [file, id] of [[`${name}/ShareViewController.swift`, target.uuid], [`${name}/ShareQueue.swift`, target.uuid], [`${name}/CloudStore.swift`, target.uuid], ['ReadingShareQueue/CloudStore.swift', main],
     ['ReadingShareQueue/ShareQueue.swift', main], ['ReadingShareQueue/ReadingShareQueue.swift', main], ['ReadingShareQueue/ReadingShareQueueBridge.m', main]]) {
     if (!project.hasFile(file)) project.addSourceFile(file, { target: id }, group);
   }
@@ -41,7 +42,7 @@ function addTarget(project, bundleId, appleTeamId) {
 module.exports = config => {
   const group = `group.${config.ios.bundleIdentifier}.sharing`;
   config = withEntitlementsPlist(config, config => {
-    config.modResults['com.apple.security.application-groups'] = [...new Set([...(config.modResults['com.apple.security.application-groups'] || []), group])];
+    config.modResults['com.apple.security.application-groups'] = [...new Set([...(config.modResults['com.apple.security.application-groups'] || []).filter(value => !value.endsWith('.sharing')), group])];
     return config;
   });
   config = withDangerousMod(config, ['ios', async config => {
@@ -49,8 +50,8 @@ module.exports = config => {
     const dest = path.join(native, name), main = path.join(native, 'ReadingShareQueue');
     fs.mkdirSync(dest, { recursive: true }); fs.mkdirSync(main, { recursive: true });
     const copy = (from, to) => fs.writeFileSync(to, fs.readFileSync(from, 'utf8').replaceAll('group.com.articlestacks.mobile.sharing', group));
-    for (const file of ['ShareViewController.swift', 'ShareQueue.swift', 'Info.plist', 'AddToStack.entitlements']) copy(path.join(root, 'share-extension', file), path.join(dest, file));
-    copy(path.join(root, 'share-extension/ShareQueue.swift'), path.join(main, 'ShareQueue.swift'));
+    for (const file of ['ShareViewController.swift', 'ShareQueue.swift', 'CloudStore.swift', 'Info.plist', 'AddToStack.entitlements']) copy(path.join(root, 'share-extension', file), path.join(dest, file));
+    for (const file of ['ShareQueue.swift', 'CloudStore.swift']) copy(path.join(root, 'share-extension', file), path.join(main, file));
     for (const file of ['ReadingShareQueue.swift', 'ReadingShareQueueBridge.m']) copy(path.join(root, 'native', file), path.join(main, file));
     return config;
   }]);

@@ -121,6 +121,30 @@ function Main() {
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const working = useRef(false), scanned = useRef(false);
   useEffect(() => { setItems(library()); }, []);
+  useEffect(() => {
+    const queue = NativeModules.ReadingShareQueue;
+    if (Platform.OS !== 'ios' || !queue?.nextCloudRecording) return;
+    let disposed = false, importing = false;
+    async function syncAudio() {
+      if (disposed || importing || AppState.currentState !== 'active') return;
+      importing = true;
+      try {
+        for (let count = 0; count < 20 && !disposed; count++) {
+          const next = await queue.nextCloudRecording() as {id: string; uri: string; name: string; workspace: string} | null;
+          if (!next) break;
+          await importFile(next.uri, next.name, next.id);
+          await queue.acknowledgeCloudRecording(next.id, next.workspace);
+          if (!disposed) {setItems(library()); setProgress('Audio synced from iCloud. Find it in your library.');}
+        }
+      } catch (error) {
+        if (!disposed) setError('iCloud audio sync: ' + (error as Error).message);
+      } finally { importing = false; }
+    }
+    void syncAudio();
+    const timer = setInterval(syncAudio, 15000);
+    const listener = AppState.addEventListener('change', state => {if (state === 'active') void syncAudio();});
+    return () => {disposed = true; clearInterval(timer); listener.remove();};
+  }, []);
   useEffect(() => { scroll.current?.scrollTo({ y: 0, animated: false }); }, [tab]);
   async function run(operation: () => Promise<Recording>) {
     if (working.current) return;

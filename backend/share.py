@@ -105,6 +105,57 @@ def register(app, core):
                     with core.db() as conn:
                         conn.execute("UPDATE share_inbox SET status='error',payload='{}',error=? WHERE id=?", (message[:1000], row['id']))
 
+        def validate(self, data, legacy=False):
+            if not isinstance(data, dict):
+                raise ValueError('Invalid share request.')
+            sid, url = data['stackId'], data.get('url', '')
+            if not isinstance(sid, str) or not isinstance(url, str) or len(url) > 8192:
+                raise ValueError('Invalid URL or stack.')
+            if 'newStackName' in data:
+                name = data['newStackName']
+                if legacy or sid or not isinstance(name, str) or not 1 <= len(name.strip()) <= 200:
+                    raise ValueError('Enter a new stack name (1–200 characters), or select an existing stack.')
+            if 'newStackId' in data:
+                draft_id = data['newStackId']
+                if ('newStackName' not in data or not isinstance(draft_id, str)
+                        or not draft_id.startswith('shared-')
+                        or draft_id != 'shared-' + str(uuid.UUID(draft_id[7:]))):
+                    raise ValueError('Invalid new stack ID.')
+            pdf = data.get('pdf')
+            if pdf:
+                raw = base64.b64decode(pdf, validate=True)
+                if len(raw) > 20_000_000 or b'%PDF-' not in raw[:1024]:
+                    raise ValueError('Choose a PDF smaller than 20 MB.')
+            elif not url.startswith(('http://', 'https://')):
+                raise ValueError('Choose a public HTTP or HTTPS URL.')
+            if not isinstance(data.get('title', ''), str) or len(data.get('title', '')) > 500:
+                raise ValueError('Invalid title.')
+
+        def accept(self, data):
+            self.validate(data)
+            ident = str(uuid.UUID(data['id']))
+            payload = json.dumps({k: data[k] for k in ('stackId', 'url', 'pdf', 'title', 'newStackName', 'newStackId') if k in data}, sort_keys=True)
+            fingerprint = hashlib.sha256(payload.encode()).hexdigest()
+            with core.db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                row = conn.execute('SELECT * FROM share_inbox WHERE id=?', (ident,)).fetchone()
+                if not row or (row['status'] == 'error' and data.get('retry') is True):
+                    size = conn.execute("SELECT COALESCE(SUM(length(payload)),0) FROM share_inbox WHERE status!='complete'").fetchone()[0]
+                    if size + len(payload) > 300_000_000:
+                        raise HTTPException(507, 'Mac inbox is full. Resolve pending imports and retry.')
+                if row:
+                    if row['fingerprint'] != fingerprint:
+                        raise HTTPException(409, 'Request ID already used for a different item.')
+                    if row['status'] == 'error' and data.get('retry') is True:
+                        conn.execute("UPDATE share_inbox SET status='queued',error='',payload=? WHERE id=?", (payload, ident))
+                        result = dict(id=ident, status='queued', error='')
+                    else:
+                        result = {k: row[k] for k in ('id', 'status', 'error')}
+                else:
+                    conn.execute("INSERT INTO share_inbox(id,fingerprint,payload,status,created) VALUES (?,?,?,'queued',?)", (ident, fingerprint, payload, time.time()))
+                    result = dict(id=ident, status='queued', error='')
+            return result
+
         def start(self):
             if self.server:
                 return
@@ -170,58 +221,17 @@ def register(app, core):
                         if not 0 < length <= (27_000_000 if self.path == '/inbox' else 16384):
                             return self.reply(400, {'detail': 'Invalid request size. PDFs must be under 20 MB.'})
                         data = json.loads(self.rfile.read(length))
-                        sid, url = data['stackId'], data.get('url', '')
-                        if not isinstance(sid, str) or not isinstance(url, str) or len(url) > 8192:
-                            raise ValueError('Invalid URL or stack.')
-                        if 'newStackName' in data:
-                            name = data['newStackName']
-                            if self.path != '/inbox' or sid or not isinstance(name, str) or not 1 <= len(name.strip()) <= 200:
-                                raise ValueError('Enter a new stack name (1–200 characters), or select an existing stack.')
-                        if 'newStackId' in data:
-                            draft_id = data['newStackId']
-                            if ('newStackName' not in data or not isinstance(draft_id, str)
-                                    or not draft_id.startswith('shared-')
-                                    or draft_id != 'shared-' + str(uuid.UUID(draft_id[7:]))):
-                                raise ValueError('Invalid new stack ID.')
-                        pdf = data.get('pdf')
-                        if pdf:
-                            raw = base64.b64decode(pdf, validate=True)
-                            if len(raw) > 20_000_000 or b'%PDF-' not in raw[:1024]:
-                                raise ValueError('Choose a PDF smaller than 20 MB.')
-                        elif not url.startswith(('http://', 'https://')):
-                            raise ValueError('Choose a public HTTP or HTTPS URL.')
-                        if not isinstance(data.get('title', ''), str) or len(data.get('title', '')) > 500:
-                            raise ValueError('Invalid title.')
+                        owner.validate(data, legacy=self.path == '/items')
+                        sid = data['stackId']
                         if self.path == '/items':
                             with core.db() as conn:
                                 if not conn.execute('SELECT id FROM stacks WHERE id=?', (sid,)).fetchone():
                                     return self.reply(404, {'detail': 'This stack no longer exists.'})
                             owner.append(data)
                             return self.reply(200, {'ok': True})
-                        ident = str(uuid.UUID(data['id']))
-                        payload = json.dumps({k: data[k] for k in ('stackId', 'url', 'pdf', 'title', 'newStackName', 'newStackId') if k in data}, sort_keys=True)
-                        fingerprint = hashlib.sha256(payload.encode()).hexdigest()
-                        with core.db() as conn:
-                            conn.execute('BEGIN IMMEDIATE')
-                            row = conn.execute('SELECT * FROM share_inbox WHERE id=?', (ident,)).fetchone()
-                            if not row or (row['status'] == 'error' and data.get('retry') is True):
-                                size = conn.execute("SELECT COALESCE(SUM(length(payload)),0) FROM share_inbox WHERE status!='complete'").fetchone()[0]
-                                if size + len(payload) > 300_000_000:
-                                    return self.reply(507, {'detail': 'Mac inbox is full. Resolve pending imports and retry.'})
-                            if row:
-                                if row['fingerprint'] != fingerprint:
-                                    return self.reply(409, {'detail': 'Request ID already used for a different item.'})
-                                if row['status'] == 'error' and data.get('retry') is True:
-                                    conn.execute("UPDATE share_inbox SET status='queued',error='',payload=? WHERE id=?", (payload, ident))
-                                    result = dict(id=ident, status='queued', error='')
-                                else:
-                                    result = {k: row[k] for k in ('id', 'status', 'error')}
-                            else:
-                                conn.execute("INSERT INTO share_inbox(id,fingerprint,payload,status,created) VALUES (?,?,?,'queued',?)", (ident, fingerprint, payload, time.time()))
-                                result = dict(id=ident, status='queued', error='')
-                        self.reply(202, result)
+                        self.reply(202, owner.accept(data))
                     except HTTPException as exc:
-                        self.reply(400, {'detail': str(exc.detail)})
+                        self.reply(exc.status_code, {'detail': str(exc.detail)})
                     except (ValueError, KeyError, TypeError) as exc:
                         self.reply(400, {'detail': str(exc) or 'Invalid URL or stack.'})
                     except Exception:

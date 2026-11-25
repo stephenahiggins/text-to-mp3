@@ -31,6 +31,16 @@ final class ReadingShareQueue: RCTEventEmitter {
             }
         }
     }
+    @objc func nextCloudRecording(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task.detached {
+            do { resolve(try CloudStore.nextRecording()) }
+            catch { reject("icloud_sync", error.localizedDescription, error) }
+        }
+    }
+    @objc func acknowledgeCloudRecording(_ id: String, workspace: String, resolver resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+        CloudStore.acknowledgeRecording(id, workspace: workspace)
+        resolve(nil)
+    }
     @objc func present() {
         Task { @MainActor in showSharedArticle(nil) }
     }

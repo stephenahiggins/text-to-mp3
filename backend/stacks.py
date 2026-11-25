@@ -201,3 +201,5 @@ def register(app, core):
             conn.execute('INSERT INTO jobs (id,article,voice,speed,status,total,created,stack_id,stack_revision) VALUES (?,?,?,?,?,?,?,?,?)',(jid,json.dumps(article),data.voice,data.speed,'queued',total,time.time(),sid,stack['revision']))
         core.jobs.put(jid)
         return core.get(jid)
+
+    return lambda sid, revision: audio(sid, Create(revision=revision))

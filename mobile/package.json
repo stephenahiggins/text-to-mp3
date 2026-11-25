@@ -9,7 +9,7 @@
     "android": "expo run:android",
     "ios": "bash scripts/ios.sh",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/manifest.test.ts",
+    "test": "node --experimental-strip-types --test src/manifest.test.ts tests/config.test.cjs",
     "test:share-queue": "bash scripts/test-share-queue.sh"
   },
   "dependencies": {

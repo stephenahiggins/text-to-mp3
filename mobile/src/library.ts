@@ -70,7 +70,7 @@ export async function receive(input: string, progress: (label: string) => void) 
     return recording;
   } finally { await FS.deleteAsync(temp, { idempotent: true }); }
 }
-export async function importFile(uri: string, name: string): Promise<Recording> {
+export async function importFile(uri: string, name: string, expectedId?: string): Promise<Recording> {
   const file = new File(uri);
   if (file.size > MAX_AUDIO_BYTES + 20 * 1024 * 1024) throw Error('File exceeds the import limit (150 MB audio).');
   const bytes = await file.bytes();
@@ -95,6 +95,7 @@ export async function importFile(uri: string, name: string): Promise<Recording> 
       manifest = parseManifest(JSON.parse(strFromU8(archive['manifest.json'])));
       new File(temp).write(archive['audio.mp3']);
     }
+    if (expectedId && manifest.id !== expectedId) throw Error('The iCloud recording does not match its catalog entry.');
     return await commit(manifest, temp);
   } finally { await FS.deleteAsync(temp, { idempotent: true }); }
 }

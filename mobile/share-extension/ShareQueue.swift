@@ -3,6 +3,7 @@ import SwiftUI
 import Security
 import Network
 import Darwin
+import UniformTypeIdentifiers
 
 struct Stack: Codable, Identifiable { let id: String; let name: String }
 struct ShareFailure: LocalizedError {
@@ -55,6 +56,8 @@ struct QueuedShare: Codable, Identifiable {
     var status = "waiting"
     var error = ""
     var retry = false
+    var cloudAttempt: Int?
+    var delivery: String?
     var created = Date()
     var destinationID: String {
         newStackName == nil ? stackId : newStackId ?? "shared-" + id
@@ -62,7 +65,7 @@ struct QueuedShare: Codable, Identifiable {
     var editable: Bool { status == "waiting" || status == "error" }
     var label: String {
         switch status {
-        case "processing": return "Processing on Mac / awaiting confirmation"
+        case "processing": return delivery == "icloud" ? "Sent to iCloud / awaiting Mac confirmation" : "Processing on Mac / awaiting confirmation"
         case "complete": return "Added to stack"
         case "error": return "Needs attention"
         default: return destinationID.isEmpty ? "Choose a stack" : "Waiting for Mac"
@@ -257,6 +260,8 @@ struct NearbyMac: Identifiable {
     @Published var message = ""
     @Published var busy = false
     @Published var wifi = false
+    @Published var cloudEnabled = CloudStore.enabled
+    @Published var cloudFolder = CloudStore.folderName
     @Published var nearbyMacs: [NearbyMac] = []
     @Published var connectionStatus = "Looking for your Mac on Wi-Fi…"
     @Published var pairingCode = ""
@@ -359,7 +364,28 @@ struct NearbyMac: Identifiable {
         }
         Task { await sync() }
     }
-    func request(_ path: String, body: Data? = nil, connection: String? = nil) async throws -> Data {
+    func selectCloudFolder(_ url: URL) async {
+        guard !busy else { return }
+        busy = true
+        do {
+            try await Task.detached { try CloudStore.select(url) }.value
+            cloudEnabled = true; cloudFolder = CloudStore.folderName
+            message = "iCloud is connected. Open the app to send shares and receive audio; your Mac can process them later."
+        } catch { message = error.localizedDescription }
+        busy = false
+        await sync()
+    }
+    func disconnectCloud() {
+        guard !busy, !state.items.contains(where: { $0.status == "processing" }) else {
+            message = "Wait for the Mac to confirm submitted shares before changing delivery mode."; return
+        }
+        CloudStore.disconnect(); cloudEnabled = false
+        message = "iCloud sync disconnected. Wi-Fi sharing is available."
+    }
+    func request(_ path: String, body: Data? = nil, connection: String? = nil, attempt: Int = 0, delivery: String? = nil) async throws -> Data {
+        if connection == nil && (delivery == "icloud" || (delivery == nil && cloudEnabled)) {
+            return try await Task.detached { try CloudStore.request(path, body: body, attempt: attempt) }.value
+        }
         guard wifi else { throw ShareFailure(message: "Saved items will wait for Wi-Fi and your Mac.") }
         guard var parts = URLComponents(string: (connection ?? ConnectionStore.read()).trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(parts.scheme ?? ""), parts.host != nil,
@@ -403,17 +429,17 @@ struct NearbyMac: Identifiable {
     func sync() async {
         guard !busy else { return }
         reload()
-        guard wifi else { message = "Waiting for Wi-Fi and your Mac."; return }
+        guard wifi || cloudEnabled else { message = "Waiting for Wi-Fi and your Mac."; return }
         busy = true; defer { busy = false; reload() }
         do {
-            guard try await discoveredConnection() else { return }
+            if !cloudEnabled { guard try await discoveredConnection() else { return } }
             let fd = try QueueStore.lock("sync.lock", nonblocking: true); defer { Darwin.close(fd) }
             let stacks = try JSONDecoder().decode([Stack].self, from: await request("/stacks"))
-            try QueueStore.transaction { $0.stacks = stacks }; reload(); message = ""; connectionStatus = "Connected to your Mac"
+            try QueueStore.transaction { $0.stacks = stacks }; reload(); message = ""; connectionStatus = cloudEnabled ? "Syncing through iCloud Drive" : "Connected to your Mac"
             for var item in state.items where item.status != "complete" && item.status != "error" && (!item.stackId.isEmpty || item.newStackName != nil) {
                 if item.status == "processing" {
                     do {
-                        let receipt = try JSONDecoder().decode(Receipt.self, from: await request("/inbox/" + item.id))
+                        let receipt = try JSONDecoder().decode(Receipt.self, from: await request("/inbox/" + item.id, attempt: item.cloudAttempt ?? 0, delivery: item.delivery ?? "wifi"))
                         try apply(receipt, to: &item)
                         continue
                     } catch let error as ShareHTTPError where error.status == 404 { /* lost upload: resend same ID */ }
@@ -423,9 +449,10 @@ struct NearbyMac: Identifiable {
                 if let id = item.newStackId { payload["newStackId"] = id }
                 if let file = item.file { payload["pdf"] = try Data(contentsOf: QueueStore.root().appendingPathComponent(file)).base64EncodedString() }
                 // Persist the uncertain state before POST. Never change destination after an ambiguous response.
+                item.delivery = cloudEnabled ? "icloud" : "wifi"
                 item.status = "processing"; try QueueStore.update(item); reload()
                 do {
-                    let receipt = try JSONDecoder().decode(Receipt.self, from: await request("/inbox", body: JSONSerialization.data(withJSONObject: payload)))
+                    let receipt = try JSONDecoder().decode(Receipt.self, from: await request("/inbox", body: JSONSerialization.data(withJSONObject: payload), attempt: item.cloudAttempt ?? 0, delivery: item.delivery))
                     try apply(receipt, to: &item)
                 } catch let error as ShareHTTPError where [400, 409, 413, 507].contains(error.status) {
                     item.status = "error"; item.error = error.localizedDescription
@@ -448,6 +475,10 @@ struct NearbyMac: Identifiable {
                !state.stacks.contains(where: { $0.id == item.destinationID }) {
                 state.stacks.append(Stack(id: item.destinationID, name: name))
             }
+        }
+        if item.status == "complete", item.delivery == "icloud" {
+            let id = item.id
+            Task.detached { try? CloudStore.removeRequest(id) }
         }
         if item.status == "complete", let file = item.file {
             try? FileManager.default.removeItem(at: QueueStore.root().appendingPathComponent(file))
@@ -475,7 +506,7 @@ struct NearbyMac: Identifiable {
         } catch { message = error.localizedDescription }
     }
     func retry(_ item: QueuedShare) {
-        do { let fd = try QueueStore.lock("sync.lock", nonblocking: true); defer { Darwin.close(fd) }; var item = item; item.status = "waiting"; item.retry = true; item.error = ""; try QueueStore.update(item); reload(); Task { await sync() } }
+        do { let fd = try QueueStore.lock("sync.lock", nonblocking: true); defer { Darwin.close(fd) }; var item = item; item.status = "waiting"; item.retry = true; item.cloudAttempt = (item.cloudAttempt ?? 0) + 1; item.error = ""; try QueueStore.update(item); reload(); Task { await sync() } }
         catch { message = error.localizedDescription }
     }
     func renameDraft(_ id: String, to name: String) {
@@ -509,6 +540,7 @@ struct ShareQueueView: View {
     var focusedItemID: String? = nil
     @ObservedObject var queue = ShareQueue.shared
     @State private var connection = ""
+    @State private var choosingCloudFolder = false
     @State private var renamingStackID: String?
     @State private var stackName = ""
     @State private var showingRename = false
@@ -528,8 +560,8 @@ struct ShareQueueView: View {
                     Section("Shared article") { SharedArticleRow(item: item, showStack: true) }
                 }
                 Section {
-                    Text("Links and PDFs stay on this iPhone until your Mac adds them to a stack. Open Reading Stacks on home Wi-Fi to send them.")
-                    Button("Send now") { Task { await queue.sync() } }.disabled(queue.busy || !queue.wifi)
+                    Text("Links and PDFs stay on this iPhone until your Mac confirms them. Use iCloud Drive to send from anywhere, or Wi-Fi to send directly.")
+                    Button("Send now") { Task { await queue.sync() } }.disabled(queue.busy || (!queue.wifi && !queue.cloudEnabled))
                     if queue.busy { ProgressView("Syncing…") }
                     if !queue.message.isEmpty { Text(queue.message).font(.footnote) }
                 }
@@ -571,6 +603,19 @@ struct ShareQueueView: View {
                         ForEach(completed) { item in SharedArticleRow(item: item, showStack: true) }
                     }
                 }
+                Section("iCloud Drive") {
+                    Text("On your Mac, open iPhone Sharing and choose an empty folder in iCloud Drive. Then choose the same folder here. Both devices must use the same Apple Account.").font(.footnote)
+                    if queue.cloudEnabled {
+                        Text("Connected: " + queue.cloudFolder)
+                        Text("Open Reading Stacks to sync shares and completed audio. iCloud transfers may take time; your Mac processes shares when awake.").font(.footnote)
+                    }
+                    Button(queue.cloudEnabled ? "Choose folder again" : "Choose iCloud folder") { choosingCloudFolder = true }
+                        .disabled(queue.busy)
+                    if queue.cloudEnabled {
+                        Button("Disconnect iCloud", role: .destructive) { queue.disconnectCloud() }
+                            .disabled(queue.busy || queue.state.items.contains { $0.status == "processing" })
+                    }
+                }
                 Section("Mac connection") {
                     Text(queue.connectionStatus).font(.footnote)
                     if !queue.pairingCode.isEmpty {
@@ -586,6 +631,11 @@ struct ShareQueueView: View {
                         SecureField("Connection link", text: $connection).textInputAutocapitalization(.never).autocorrectionDisabled()
                         Button("Connect with link") { Task { await queue.connect(connection) } }.disabled(queue.busy || !queue.wifi || connection.isEmpty)
                     }
+                }
+            }.fileImporter(isPresented: $choosingCloudFolder, allowedContentTypes: [.folder]) { result in
+                switch result {
+                case .success(let url): Task { await queue.selectCloudFolder(url) }
+                case .failure(let error): queue.message = error.localizedDescription
                 }
             }.navigationTitle(focusedItemID == nil ? "Saved shares" : "Shared article")
                 .alert("Rename stack", isPresented: $showingRename) {

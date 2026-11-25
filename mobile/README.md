@@ -159,3 +159,14 @@ the receiver. QR codes contain plain transfer links for scanning inside the app.
 ## Add article URLs from iOS
 
 The native **Add to Stack** Share Extension saves URLs and PDFs on your iPhone, including offline. Open the app on home Wi-Fi: it finds your Mac automatically. Approve the matching code in the Mac app once; later deliveries reconnect automatically. The numbered **shared articles · send to Mac** button opens saved shares (shown when saved shares exist). See [iPhone sharing setup and testing](SHARE_EXTENSION.md) for installation, pairing, and limitations.
+
+## iCloud Drive and building with your own account
+
+[iCloud sync setup](ICLOUD_SYNC.md) explains sending shares over the internet,
+automatic Mac processing and returning audio to the phone. Choose the same folder
+once on each device; no network pairing is needed in iCloud mode.
+
+For your own build, copy `.env.example` to `.env.local` in this directory and set
+`APPLE_TEAM_ID` and `APP_BUNDLE_IDENTIFIER`. Keep the app ID unchanged when updating
+an existing installation. The config plugin derives App Group and extension IDs;
+your signing account must support and provision App Groups for both targets.

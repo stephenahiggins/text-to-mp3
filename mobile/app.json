@@ -17,8 +17,7 @@
         "NSBonjourServices": [
           "_readingstacks._tcp"
         ]
-      },
-      "appleTeamId": "3VTHACLL45"
+      }
     },
     "android": {
       "package": "com.articlestacks.mobile",

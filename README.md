@@ -137,3 +137,15 @@ Progress shows **Preparing Briefing** before narration. If OpenAI fails, retry o
 ## Automatic iPhone connection
 
 Run the Mac app and open Reading Stacks on your iPhone on the same Wi-Fi. The phone finds this Mac automatically with Bonjour. Approve the matching code in the Mac web app once; subsequent connections and saved-share delivery are automatic while the phone app is active. No pasted link is needed. Install the updated native app with `make device` and allow Local Network access. The inbox listens on port 8767; the editor stays loopback-only. See [iPhone sharing](mobile/SHARE_EXTENSION.md).
+
+## Personal iCloud sync and builds for other users
+
+Use **iPhone Sharing → Send from anywhere with iCloud Drive** to select an empty
+Reading Stacks folder in your own iCloud Drive. Select the same folder in the iPhone
+app's **Mac connection → iCloud Drive** setup. Shares wait for your Mac to be online;
+completed audio returns to the phone's library while its app is open. Automatic
+local audio generation can be turned off in the Mac setup panel.
+
+Other developers can copy `mobile/.env.example` to `mobile/.env.local` and supply
+their own signing team and app identifier. Each person's selected iCloud folder and
+Mac data stay separate. See [iCloud setup, limits and distribution](mobile/ICLOUD_SYNC.md).

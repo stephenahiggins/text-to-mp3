@@ -1,3 +1,4 @@
+import {CloudSync} from './CloudSync';
 import React, {useEffect, useState} from 'react';
 
 async function connection(method = 'GET') {
@@ -36,7 +37,8 @@ export function IPhoneSharing() {
   return <section className="sharing-page" aria-labelledby="sharing-title">
     <a className="sharing-back" href="#/">← Your Stacks</a>
     <div className="intro"><p className="eyebrow">IPHONE SHARING</p><h1 id="sharing-title">Save a good read, wherever you find it.</h1>
-      <p>Save articles and PDFs from your iPhone’s share sheet, then send them to a stack when you’re home.</p></div>
+      <p>Save articles and PDFs from your iPhone’s share sheet, then sync them through your personal iCloud Drive or send directly over Wi-Fi.</p></div>
+    <CloudSync/>
     <div className="sharing-grid">
       <section className="card sharing-connection" aria-labelledby="connection-title">
         <h2 id="connection-title">Your iPhone finds this Mac automatically</h2>
