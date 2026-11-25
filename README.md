@@ -6,7 +6,7 @@ A local article-to-MP3 application for Apple Silicon macOS. Paste a public Subst
 
 Click New Stack and rename its title inline, then add public URLs, pasted text, or HTML, Markdown, TXT, text-based PDF and Word (.docx) files. Multiple file imports are supported. Scans and images need narration text supplied through Paste Text. Review and edit documents, reorder them, or remove them. Additions and ordering are saved immediately; document edits use Save Changes. Saved Stacks survive browser and backend restarts. Drag Stack cards to reorder them, or use Alt + Arrow keys while a card is focused. Cards show creation dates and audio status: green for current audio, amber for changes since generation, and black when no audio exists. Completed audio shows its last generation time.
 
-Choose a voice and speed, then Create Audio to produce one MP3 in document order, beginning with the Stack title, then each document’s title and date (when available), with pauses between documents. The job captures an immutable snapshot, so you can keep adding to the Stack during generation. A successful matching version marks the Stack Audiofied. Subsequent edits mark the audio as needing an update; Regenerate Audio retains older versions while reusing cached chunks. Existing conversions migrate automatically to single-document Stacks.
+Choose Whole Article or Briefing Only for each document. Estimated listening time includes introductions, pauses and the selected speed; unprepared briefings use a 50-word allowance. Briefing Only always requires a summary, even with Include Briefings switched off. Choose a voice and speed, then Create Audio to produce one MP3 in document order, beginning with the Stack title, then each document’s title and date (when available), with pauses between documents. The job captures an immutable snapshot, so you can keep adding to the Stack during generation. A successful matching version marks the Stack Audiofied. Subsequent edits mark the audio as needing an update; Regenerate Audio replaces the previous recording after successful generation while reusing cached chunks. Only the latest recording is retained; existing older recordings are removed on startup. Existing conversions migrate automatically to single-document Stacks.
 
 ## Start
 
@@ -47,7 +47,7 @@ Prerequisites: macOS Apple Silicon, Python 3.11+ (tested with 3.12), Node.js 20.
 brew install python@3.12 node ffmpeg uv
 ```
 
-Setup uses an existing `uv`, or installs a project-local copy in `.tools`. Python packages live in `.venv`; exact dependencies are recorded in `uv.lock`, and frontend dependencies in `frontend/package-lock.json`. No paid services or API keys are needed.
+Setup uses an existing `uv`, or installs a project-local copy in `.tools`. Python packages live in `.venv`; exact dependencies are recorded in `uv.lock`, and frontend dependencies in `frontend/package-lock.json`. No paid services or API keys are needed for local narration. Optional AI briefings use your OpenAI API account.
 
 ## Your files
 
@@ -73,7 +73,7 @@ The installed package is pinned to 0.4.9. Its released code assumes integer spee
 
 Model assets come from the [upstream model-files-v1.1 release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.1). Run `.venv/bin/python scripts/download_models.py` to fetch missing files independently. The downloader uses macOS curl with TLS verification and atomic replacement. It records local SHA256 fingerprints in `models/checksums.json`; these are local fingerprints, not an upstream signature. Cache keys fingerprint both model and voice files. Model weights are Apache 2.0; the wrapper is MIT. See upstream for licenses.
 
-After setup, **pasted text and local files work completely offline**. Starting the application, phonemisation and synthesis require no downloads. Public URL ingestion needs internet access. The built frontend uses system fonts and no remote assets. Do not use `uv run` at launch if you want to avoid dependency resolution; the launcher directly invokes `.venv/bin/python`.
+After setup, **pasted text and local files work completely offline with Include Briefings switched off**. Starting the application, phonemisation and synthesis require no downloads. Public URL ingestion needs internet access. The built frontend uses system fonts and no remote assets. Do not use `uv run` at launch if you want to avoid dependency resolution; the launcher directly invokes `.venv/bin/python`.
 
 ## Reliability and limits
 
@@ -118,3 +118,22 @@ port 8766 when needed. See the mobile README for setup, permissions and limits.
 Share Sheet extensions, folder watching, M4B chapters and cloud delivery are not implemented.
 
 Document dates can be reviewed or entered through Edit. Full dates are announced in British spoken order (for example, “the second of November, 2026”). Missing dates are omitted; upload dates are never substituted. Regenerate existing audio to include the new introductions.
+
+## Optional Spoken Briefings
+
+Before each document, Reading Stacks can announce its title, type, author, publication, publication date and date added (where known), followed by a short AI summary and the full document. The stack title is spoken first. Older documents with no recorded date added omit that date.
+
+1. Copy `.env.example` to `.env` in the project folder (keep any existing settings).
+2. Set `OPENAI_API_KEY` to your own OpenAI API key. Optionally change `OPENAI_SUMMARY_MODEL` (default: `gpt-6-luna`).
+3. Restart the local server: `python3 scripts/services.py stop local`, then `make start`.
+4. Select **Include Briefings**, then **Create Audio** or **Regenerate Audio**. With a configured key, briefings are enabled by default.
+
+The key stays on the Mac, is ignored by Git, and is never sent to the browser or phone. With briefings enabled, document text is sent to OpenAI and API usage is billed to your account. Requests use `store: false`; voice generation still runs locally.
+
+Expand a document's **Briefing** to generate or review it. Use **Edit** to adjust its summary, author, publication or document type. Editing the document text clears its old summary; unchanged documents reuse cached summaries. Very long documents are summarised in sections before producing the final short briefing.
+
+Progress shows **Preparing Briefing** before narration. If OpenAI fails, retry or choose **Continue Without Briefings**. Audio uses a frozen snapshot, so editing the stack during creation affects the next recording. Phone exports include the spoken summary and chapter timing. Existing recordings are unchanged until regenerated.
+
+## Automatic iPhone connection
+
+Run the Mac app and open Reading Stacks on your iPhone on the same Wi-Fi. The phone finds this Mac automatically with Bonjour. Approve the matching code in the Mac web app once; subsequent connections and saved-share delivery are automatic while the phone app is active. No pasted link is needed. Install the updated native app with `make device` and allow Local Network access. The inbox listens on port 8767; the editor stays loopback-only. See [iPhone sharing](mobile/SHARE_EXTENSION.md).

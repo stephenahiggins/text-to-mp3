@@ -12,6 +12,7 @@ make setup-mobile
 make simulator                         # Builds/installs and opens simulator; starts Mac app + Metro
 make simulator SIMULATOR="iPhone 17 Pro"
 make device                            # Connected iPhone, standalone Release build; signing required
+make device-dev                        # Connected iPhone, development build with Fast Refresh
 make status
 make stop                              # Stops Make-managed Mac app and Metro
 ```
@@ -23,6 +24,24 @@ Simulator or stop services launched from other terminals. Logs are in
 `.data/services/`. For physical installation, connect/unlock/trust the iPhone,
 configure Xcode signing, and enable Developer Mode. Optional `DEVICE="name or UDID"`
 selects the phone. Release installs do not need Metro after installation.
+
+### Automatic updates while developing on your iPhone
+
+Connect and unlock your iPhone, then run `make device-dev` from the repository
+root (optionally with `DEVICE="name or UDID"`). This starts Metro and installs a
+Debug development build. Keep your Mac and phone on the same Wi-Fi and allow
+local-network access. If the development launcher appears, select this project's
+Metro server. Saved changes to React components, wording, and styles refresh
+automatically while the app is connected; some changes reload the entire app.
+
+For later sessions, run `make expo` and open the development app; a native rebuild
+isn't needed for JavaScript/TypeScript edits. If edits don't appear, reconnect to
+the Metro server and check that Fast Refresh is enabled in the developer menu
+(shake the phone). `make stop-expo` stops live updates. Native dependencies,
+permissions, and Swift share-extension changes still require `make device-dev`
+again. Use `make device` when you want a standalone Release install instead;
+that install doesn't watch source changes. Both builds use the same app ID, so
+installing one replaces the other.
 
 Use Node 22.13+ (Node 24 recommended), npm, and the platform's native toolchain.
 Dependencies and the lockfile are included:
@@ -47,6 +66,12 @@ It addresses the Swift pointer-capture compilation failure on Xcode 26.2
 ([Expo issue #52754](https://github.com/expo/expo/issues/52754)) while preserving
 the synchronous JavaScript-thread execution and pointer lifetime. Review/remove
 the patch when upgrading Expo to a release with the upstream fix.
+`npm ci` also applies the `@expo/cli@58.1.18` signing fix: device builds allow
+Xcode to refresh provisioning profiles even when a development team is already
+configured. This is required after adding the shared queue's App Groups capability.
+Both targets declare that capability through the config plugin. Review/remove the
+patch when upgrading to an Expo CLI version that handles existing-team profile updates.
+
 Set your own bundle/package identifiers before store distribution. Store signing,
 TestFlight / Play distribution and cloud hosting are not configured.
 
@@ -88,8 +113,8 @@ New generations are separate recordings; an old version is never silently replac
 Move it using Files, AirDrop, Drive, USB, or another file transfer, then choose
 **Import file** inside the app. The app also accepts standalone MP3s, reading basic
 ID3v2.3/v2.4 title tags and falling back to the filename. The OS decodes the MP3;
-the app doesn't transcribe audio to recover text. File association/share extensions
-are not configured; select files with the in-app picker.
+the app doesn't transcribe audio to recover text. Audio file associations are not configured; select audio files with the in-app picker.
+The Add to Stack share extension accepts article URLs and PDFs for delivery to your Mac.
 
 The player supports offline playback, saved position, speed, skip controls,
 lock-screen/headphone controls, article seeking, and source text. Recordings
@@ -130,3 +155,7 @@ still require device acceptance checks.
 
 The custom URL scheme `articlestacks://receive?url=<encoded-transfer-link>` opens
 the receiver. QR codes contain plain transfer links for scanning inside the app.
+
+## Add article URLs from iOS
+
+The native **Add to Stack** Share Extension saves URLs and PDFs on your iPhone, including offline. Open the app on home Wi-Fi: it finds your Mac automatically. Approve the matching code in the Mac app once; later deliveries reconnect automatically. The numbered **shared articles · send to Mac** button opens saved shares (shown when saved shares exist). See [iPhone sharing setup and testing](SHARE_EXTENSION.md) for installation, pairing, and limitations.

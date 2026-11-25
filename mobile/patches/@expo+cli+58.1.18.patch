@@ -1,0 +1,16 @@
+diff --git a/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js b/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
+--- a/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
++++ b/node_modules/@expo/cli/build/src/run/ios/XcodeBuild.js
+@@ -301,8 +301,10 @@
+     if (props.device && (!props.isSimulator || (0, _simulatorCodeSigning.simulatorBuildRequiresCodeSigning)(props.projectRoot))) {
+         const developmentTeamId = await (0, _configureCodeSigning.ensureDeviceIsCodeSignedForDeploymentAsync)(props.projectRoot);
+         if (developmentTeamId) {
+-            args.push(`DEVELOPMENT_TEAM=${developmentTeamId}`, '-allowProvisioningUpdates', '-allowProvisioningDeviceRegistration');
+-        }
++            args.push(`DEVELOPMENT_TEAM=${developmentTeamId}`);
++        }
++        // Existing teams also need refreshed profiles when capabilities change.
++        args.push('-allowProvisioningUpdates', '-allowProvisioningDeviceRegistration');
+     }
+     // Add last
+     if (props.buildCache === false) {

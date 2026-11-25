@@ -52,10 +52,40 @@ def stack_parts(article):
         date_text = spoken_date(document.get('date'))
         if date_text:
             heading += '\n\n' + sentence(date_text)
-        section = chunks(heading + '\n\n' + document['prepared'])
+        briefing_only = document.get('narration_mode') == 'briefing'
+        if article.get('include_briefings') or briefing_only:
+            kind=document.get('content_type','document')
+            heading=sentence(f"Next is {document['title']}, {'an' if kind.lower().startswith(('a','e','i','o','u')) else 'a'} {kind}" + (f" by {document['author']}" if document.get('author') else ''))
+            if document.get('publication'): heading += '\n\n' + sentence('From ' + document['publication'])
+            if date_text: heading += '\n\n' + sentence('Published on the ' + date_text.removeprefix('The '))
+            if document.get('added_at'):
+                added=datetime.fromtimestamp(document['added_at']).date().isoformat()
+                heading += '\n\n' + sentence('You added it to this stack on the ' + spoken_date(added).removeprefix('The '))
+            heading += '\n\n' + sentence(document.get('briefing_summary',''))
+            if not briefing_only: heading += '\n\nNow, the full document.'
+        section = chunks(heading if briefing_only else heading + '\n\n' + document['prepared'])
         for part in section:
             part.update(document=index+1, document_title=document['title'])
         if section:
             section[-1]['pause'] = 0.8
         parts.extend(section)
     return parts
+
+
+def estimate_duration(article, speed=1):
+    """Estimate listening time without synthesis or paid summary requests."""
+    from copy import deepcopy
+    snapshot = deepcopy(article)
+    pending = 0
+    for document in snapshot['documents']:
+        if snapshot.get('include_briefings') or document.get('narration_mode') == 'briefing':
+            summary = document.get('briefing_override') or document.get('briefing_summary')
+            if not summary:
+                pending += 1
+                summary = ' '.join(['summary'] * 50)
+            document['briefing_summary'] = summary
+    durations = [0.0] * (len(snapshot['documents']) + 1)
+    for part in stack_parts(snapshot):
+        durations[part['document']] += len(part['text'].split()) * 60 / (155 * speed) + part['pause']
+    return dict(seconds=sum(durations), pending_briefings=pending,
+                items=[dict(id=d.get('id'), seconds=durations[i+1]) for i,d in enumerate(snapshot['documents'])])

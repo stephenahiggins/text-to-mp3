@@ -38,7 +38,6 @@ export function SendToPhone({ jobId }: { jobId: string }) {
   }
   return <div className="phone-transfer">
     <button className="send-to-phone-button" disabled={busy} onClick={() => void send()}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 5h4M11 18h2"/></svg>{busy ? 'Preparing…' : transfer ? 'New Transfer Code' : 'Send To Phone'}</button>
-    <a href={`/api/jobs/${jobId}/stack`} download>Export Stack</a>
     {error && <p role="alert" className="error">{error}</p>}
     {transfer && <div className="phone-transfer-panel">
       <strong>{received ? 'Downloaded On Phone' : expired ? 'Transfer Expired' : 'Ready To Download'}</strong>

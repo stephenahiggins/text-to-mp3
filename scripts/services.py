@@ -18,6 +18,9 @@ SERVICES = {
 
 def identity(pid):
     result = subprocess.run(['ps', '-p', str(pid), '-o', 'lstart=', '-o', 'args='], capture_output=True, text=True)
+    if result.returncode != 0 and result.stderr.strip():
+        raise SystemExit('Cannot inspect service processes: ' + result.stderr.strip() +
+                         '\nService tracking was preserved. Run this command from a terminal with process access.')
     return result.stdout.strip() if result.returncode == 0 else ''
 
 

@@ -7,10 +7,28 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 
+def prune_audio(conn, sid):
+    """Keep the latest attempt and latest successful recording for a stack."""
+    rows = conn.execute('SELECT * FROM jobs WHERE stack_id=? ORDER BY created DESC', (sid,)).fetchall()
+    completed = next((r['id'] for r in rows if r['status'] == 'completed'), None)
+    keep = {rows[0]['id'], completed} if rows else set()
+    keep.update(r['id'] for r in rows if r['status'] in ('queued', 'running', 'encoding'))
+    retained = {r['output'] for r in rows if r['id'] in keep}
+    for row in rows:
+        if row['id'] in keep:
+            continue
+        if row['output'] and row['output'] not in retained:
+            path = Path(row['output'])
+            for asset in (path, path.with_suffix('.json'), path.with_suffix('.chapters.json')):
+                asset.unlink(missing_ok=True)
+        conn.execute('DELETE FROM jobs WHERE id=?', (row['id'],))
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS stacks (id TEXT PRIMARY KEY, name TEXT NOT NULL, items TEXT NOT NULL, revision INTEGER NOT NULL, created REAL, updated REAL)')
+    conn.execute('CREATE TABLE IF NOT EXISTS briefings (cache_key TEXT PRIMARY KEY, summary TEXT, model TEXT, created REAL)')
     columns = {row[1] for row in conn.execute('PRAGMA table_info(jobs)')}
-    for column, definition in [('stack_id','TEXT'), ('stack_revision','INTEGER'), ('current_document','INTEGER DEFAULT 0'), ('generated_at','REAL')]:
+    for column, definition in [('stack_id','TEXT'), ('stack_revision','INTEGER'), ('current_document','INTEGER DEFAULT 0'), ('generated_at','REAL'), ('stage',"TEXT DEFAULT ''")]:
         if column not in columns:
             conn.execute(f'ALTER TABLE jobs ADD COLUMN {column} {definition}')
     for job in conn.execute('SELECT * FROM jobs WHERE stack_id IS NULL').fetchall():
@@ -26,6 +44,9 @@ def migrate(conn):
         if job['output'] and Path(job['output']).is_file():
             conn.execute('UPDATE jobs SET generated_at=? WHERE id=?',(Path(job['output']).stat().st_mtime,job['id']))
 
+    for row in conn.execute('SELECT id FROM stacks').fetchall():
+        prune_audio(conn, row['id'])
+
 
 def register(app, core):
     class StackInput(BaseModel):
@@ -37,13 +58,17 @@ def register(app, core):
         voice: str = 'bm_george'
         speed: float = Field(default=1,ge=.5,le=2)
         revision: int
+        include_briefings: bool = False
 
     def load(conn,sid):
         row=conn.execute('SELECT * FROM stacks WHERE id=?',(sid,)).fetchone()
         if not row: raise HTTPException(404,'Stack Not Found')
         result=dict(row)
-        result['items']=json.loads(result['items'])
-        versions=[dict(r) for r in conn.execute("SELECT id,status,total,completed,error,stack_revision,voice,speed,created,generated_at,current_document,coalesce(json_array_length(article,'$.documents'),1) AS document_count FROM jobs WHERE stack_id=? ORDER BY created DESC",(sid,))]
+        from backend.briefings import cached
+        result['items']=[dict(core.Article.model_validate(item).model_dump(), id=item['id'], added_at=item.get('added_at')) for item in json.loads(result['items'])]
+        for item in result['items']:
+            item['briefing_summary']=item.get('briefing_override') or cached(conn,item)
+        versions=[dict(r) for r in conn.execute("SELECT id,status,stage,total,completed,error,stack_revision,voice,speed,created,generated_at,current_document,coalesce(json_array_length(article,'$.documents'),1) AS document_count FROM jobs WHERE stack_id=? ORDER BY created DESC",(sid,))]
         result['versions']=versions
         active=next((v for v in versions if v['status'] in ('queued','running','encoding')),None)
         completed=next((v for v in versions if v['status']=='completed'),None)
@@ -54,6 +79,24 @@ def register(app, core):
     def listing():
         with core.db() as conn:
             return [load(conn,r['id']) for r in conn.execute('SELECT s.id FROM stacks s JOIN stack_positions p ON p.stack_id=s.id ORDER BY p.position,s.created DESC').fetchall()]
+
+    @app.delete('/api/stacks/{sid}')
+    def delete(sid: str):
+        with core.db() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            load(conn, sid)
+            recordings = conn.execute('SELECT id,status,output FROM jobs WHERE stack_id=?', (sid,)).fetchall()
+            if any(r['status'] in ('queued','running','encoding') or r['id'] in core.cancellations for r in recordings):
+                raise HTTPException(409, 'Cancel Audio Generation And Wait For It To Stop Before Deleting This Stack.')
+            for recording in recordings:
+                if recording['output']:
+                    path = Path(recording['output'])
+                    for asset in (path, path.with_suffix('.json'), path.with_suffix('.chapters.json')):
+                        asset.unlink(missing_ok=True)
+            conn.execute('DELETE FROM jobs WHERE stack_id=?', (sid,))
+            conn.execute('DELETE FROM stack_positions WHERE stack_id=?', (sid,))
+            conn.execute('DELETE FROM stacks WHERE id=?', (sid,))
+        return {'ok': True}
 
     @app.post('/api/stacks')
     def create(data: StackInput):
@@ -103,9 +146,44 @@ def register(app, core):
             conn.execute('BEGIN IMMEDIATE')
             current=load(conn,sid)
             if current['revision']!=data.revision: raise HTTPException(409,'This Stack Changed. Reload Before Saving.')
-            if current['name']==data.name.strip() and current['items']==items: return current
+            previous={i['id']:i for i in current['items']}
+            for item in items:
+                old=previous.get(item['id'])
+                item['added_at']=old.get('added_at') if old else time.time()
+                if old and old['prepared']!=item['prepared']:
+                    item['briefing_override']=None
+                if item.get('content_type') not in ('document','blog post','article','PDF','Word document','text'):
+                    item['content_type']='document'
+            comparable=[{k:v for k,v in i.items() if k!='briefing_summary'} for i in current['items']]
+            if current['name']==data.name.strip() and comparable==items: return current
             conn.execute('UPDATE stacks SET name=?,items=?,revision=revision+1,updated=? WHERE id=?',(data.name.strip(),json.dumps(items),time.time(),sid))
             return load(conn,sid)
+
+    class BriefingRequest(BaseModel):
+        revision: int
+
+    @app.post('/api/stacks/{sid}/items/{item_id}/briefing')
+    def briefing(sid: str, item_id: str, data: BriefingRequest):
+        from backend.briefings import summarise, BriefingError
+        with core.db() as conn:
+            stack=load(conn,sid)
+        if stack['revision']!=data.revision: raise HTTPException(409,'This Stack Changed. Reload Before Preparing A Briefing.')
+        document=next((d for d in stack['items'] if d['id']==item_id),None)
+        if not document: raise HTTPException(404,'Document Not Found')
+        try:
+            summarise(document,core.db)
+        except BriefingError as exc:
+            raise HTTPException(502,str(exc)) from None
+        with core.db() as conn:
+            return load(conn,sid)
+
+    @app.get('/api/stacks/{sid}/estimate')
+    def estimate(sid: str, speed: float = 1, include_briefings: bool = False):
+        if not .5 <= speed <= 2: raise HTTPException(400, 'Invalid Speed')
+        from backend.narration import estimate_duration
+        with core.db() as conn:
+            stack = load(conn, sid)
+        return estimate_duration(dict(title=stack['name'], documents=stack['items'], include_briefings=include_briefings), speed)
 
     @app.post('/api/stacks/{sid}/create')
     def audio(sid: str, data: Create):
@@ -117,7 +195,7 @@ def register(app, core):
             if any(v['status'] in ('queued','running','encoding') for v in stack['versions']): raise HTTPException(409,'This Stack Is Already Being Audiofied')
             if not stack['items'] or any(not i['prepared'].strip() for i in stack['items']): raise HTTPException(400,'Add Readable Documents First')
             # Store the full snapshot: editing the draft cannot change queued audio.
-            article=dict(title=stack['name'],author='',publication='Reading Stacks',url='',date='',original='\n\n'.join(i['original'] for i in stack['items']),prepared='\n\n'.join(i['prepared'] for i in stack['items']),documents=stack['items'])
+            article=dict(title=stack['name'],author='',publication='Reading Stacks',url='',date='',original='\n\n'.join(i['original'] for i in stack['items']),prepared='\n\n'.join(i['prepared'] for i in stack['items']),documents=stack['items'],include_briefings=data.include_briefings)
             jid=uuid.uuid4().hex
             total=len(core.article_parts(article))
             conn.execute('INSERT INTO jobs (id,article,voice,speed,status,total,created,stack_id,stack_revision) VALUES (?,?,?,?,?,?,?,?,?)',(jid,json.dumps(article),data.voice,data.speed,'queued',total,time.time(),sid,stack['revision']))

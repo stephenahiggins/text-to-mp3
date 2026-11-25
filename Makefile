@@ -3,7 +3,7 @@ PYTHON ?= python3
 SIMULATOR ?=
 DEVICE ?=
 
-.PHONY: help setup setup-mobile start local stop status expo stop-expo simulator simulator-open device build check
+.PHONY: help setup setup-mobile start local stop status expo stop-expo simulator simulator-open device device-dev build check
 help:
 	@echo 'make setup           Install Mac dependencies/models and build the web UI'
 	@echo 'make setup-mobile    Install Expo dependencies'
@@ -13,6 +13,7 @@ help:
 	@echo '                     Optional: SIMULATOR="iPhone 17 Pro"'
 	@echo 'make simulator-open  Open an already-installed app via Expo (foreground; Ctrl-C stops)'
 	@echo 'make device          Build/install standalone Release app on iPhone'
+	@echo 'make device-dev      Start Metro and install iPhone development app with live updates'
 	@echo '                     Optional: DEVICE="device name or UDID"; signing required'
 	@echo 'make status          Show managed local app and Expo status'
 	@echo 'make stop            Stop managed local app and Expo services'
@@ -34,6 +35,8 @@ simulator-open: stop-expo
 	cd mobile && npm start -- --ios
 device:
 	cd mobile && npm run ios -- --configuration Release --no-bundler --device $(if $(DEVICE),"$(DEVICE)",)
+device-dev: expo
+	cd mobile && npm run ios -- --configuration Debug --no-bundler --device $(if $(DEVICE),"$(DEVICE)",)
 status:
 	$(PYTHON) scripts/services.py status
 stop:

@@ -10,11 +10,15 @@
       "bundleIdentifier": "com.articlestacks.mobile",
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Download stacks from your Mac over your local Wi-Fi network.",
+        "NSLocalNetworkUsageDescription": "Find your Mac automatically and send saved articles and PDFs over Wi-Fi.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
-      }
+        },
+        "NSBonjourServices": [
+          "_readingstacks._tcp"
+        ]
+      },
+      "appleTeamId": "3VTHACLL45"
     },
     "android": {
       "package": "com.articlestacks.mobile",
@@ -47,7 +51,8 @@
         }
       ],
       "expo-document-picker",
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withShareExtension"
     ],
     "icon": "./assets/reading-stacks.png"
   }

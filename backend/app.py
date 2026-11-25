@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 import asyncio
 import ipaddress
@@ -20,6 +21,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from backend.text import extract, prepare, chunks, filename
 from backend.audio import Engine, encode, ROOT
+from backend.briefings import BriefingCancelled, configured as briefings_configured, model as briefing_model
+
+from dotenv import load_dotenv
+load_dotenv(ROOT / ".env", override=False)
 
 DATA = Path(os.environ.get('ARTICLE_DATA_DIR', ROOT / '.data'))
 OUTPUT = Path(os.environ.get('ARTICLE_OUTPUT_DIR', Path.home() / 'Music/Articles'))
@@ -72,6 +77,16 @@ def worker():
             cancellations[job_id] = cancelled
             update(job_id, status='running', error='')
             article = json.loads(job['article'])
+            from backend.briefings import prepare_job
+            def check_briefing():
+                if stop.is_set() or cancelled.is_set(): raise BriefingCancelled()
+            def briefing_progress(index, snapshot=None):
+                values = dict(stage='briefing', current_document=index)
+                if snapshot is not None: values['article'] = json.dumps(snapshot)
+                update(job_id, **values)
+            prepare_job(article, db, briefing_progress, check_briefing)
+            check_briefing()
+            update(job_id, stage='narrating', article=json.dumps(article))
             parts = article_parts(article)
             update(job_id, total=len(parts), completed=0)
             paths = []
@@ -93,7 +108,13 @@ def worker():
                     output.with_suffix('.json').unlink(missing_ok=True)
                     output.with_suffix('.chapters.json').unlink(missing_ok=True)
                 else:
-                    update(job_id, status='completed', output=str(output), generated_at=time.time())
+                    with db() as conn:
+                        conn.execute("UPDATE jobs SET status='completed',output=?,generated_at=? WHERE id=?", (str(output), time.time(), job_id))
+                        if job.get('stack_id'):
+                            from backend.stacks import prune_audio
+                            prune_audio(conn, job['stack_id'])
+        except BriefingCancelled:
+            pass
         except Exception as exc:
             logging.exception('Conversion %s failed', job_id)
             if get(job_id)['status'] not in ('cancelled', 'queued'):
@@ -124,10 +145,12 @@ async def lifespan(app):
     stop.clear()
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
+    mobile_sharing.restore()
     yield
     stop.set()
     await asyncio.to_thread(thread.join, 5)
     await asyncio.to_thread(mobile_transfers.close)
+    await asyncio.to_thread(mobile_sharing.close)
 
 
 app = FastAPI(title='Reading Stacks', lifespan=lifespan)
@@ -150,7 +173,7 @@ class Source(BaseModel):
 
 
 async def fetch_url(url):
-    async with httpx.AsyncClient(timeout=30, follow_redirects=False, headers={'User-Agent': 'ArticleVoice/0.1 (personal article reader)'}) as client:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=False, headers={'User-Agent': 'ReadingStacks/1.0 (https://github.com/stephenahiggins/text-to-mp3) httpx/' + httpx.__version__}) as client:
         for _ in range(6):
             parsed = urlparse(url)
             if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username:
@@ -167,13 +190,14 @@ async def fetch_url(url):
                 data = bytearray()
                 async for block in response.aiter_bytes():
                     data.extend(block)
-                    if len(data) > 10_000_000:
-                        raise ValueError('Page exceeds the 10 MB limit')
-                return data.decode(response.encoding or 'utf-8', errors='replace')
+                    if len(data) > 20_000_000:
+                        raise ValueError('Document exceeds the 20 MB limit')
+                return bytes(data), response.headers.get('content-type', ''), response.encoding or 'utf-8'
         raise ValueError('Too many redirects')
 
 
-def finish(article):
+def finish(article, content_type='document'):
+    article['content_type'] = content_type
     article['prepared'] = prepare(article['original'])
     article['words'] = len(article['prepared'].split())
     if not article['words']:
@@ -185,9 +209,13 @@ def finish(article):
 async def ingestion(source: Source):
     try:
         if source.url:
-            html = await fetch_url(source.url)
-            return await asyncio.to_thread(lambda: finish(extract(html, 'html', source.title, source.url)))
-        return finish(extract(source.text, title=source.title))
+            content, media_type, encoding = await fetch_url(source.url)
+            if 'application/pdf' in media_type.lower() or b'%PDF-' in content[:1024]:
+                from backend.pdf import pdf_article
+                return await asyncio.to_thread(lambda: finish(pdf_article(content, source.title, source.url), 'PDF'))
+            html = content.decode(encoding, errors='replace')
+            return await asyncio.to_thread(lambda: finish(extract(html, 'html', source.title, source.url), 'article'))
+        return finish(extract(source.text, title=source.title), 'text')
     except Exception as exc:
         raise HTTPException(400, f'{exc}. You can paste or import authorised article text instead.') from exc
 
@@ -201,10 +229,13 @@ async def import_file(file: UploadFile = File(...)):
     if len(content) > 20_000_000:
         raise HTTPException(400, 'File Exceeds 20 MB')
     try:
-        if extension in ('.pdf','.docx'):
+        if extension == '.pdf':
+            from backend.pdf import pdf_article
+            return await asyncio.to_thread(lambda: finish(pdf_article(content, Path(file.filename or 'PDF document').stem), 'PDF'))
+        if extension == '.docx':
             from backend.imports import document_text
             text = await asyncio.to_thread(document_text, content, extension)
-            return finish(extract(text, title=Path(file.filename).stem))
+            return finish(extract(text, title=Path(file.filename).stem), 'PDF' if extension=='.pdf' else 'Word document')
         return await asyncio.to_thread(lambda: finish(extract(content.decode('utf-8-sig'), 'html' if extension in ('.html','.htm') else 'md' if extension=='.md' else 'text', Path(file.filename).stem)))
     except Exception as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -212,7 +243,7 @@ async def import_file(file: UploadFile = File(...)):
 
 @app.get('/api/config')
 def config():
-    return dict(voices=VOICES, output=str(OUTPUT), model_ready=all((ROOT/'models'/p).exists() for p in ['kokoro-v1.0.onnx','voices-v1.0.bin']))
+    return dict(briefings_ready=briefings_configured(), briefing_model=briefing_model(), voices=VOICES, output=str(OUTPUT), model_ready=all((ROOT/'models'/p).exists() for p in ['kokoro-v1.0.onnx','voices-v1.0.bin']))
 
 
 class Article(BaseModel):
@@ -223,6 +254,11 @@ class Article(BaseModel):
     publication: str = ''
     date: str = ''
     url: str = ''
+    content_type: str = Field(default='document', max_length=50)
+    source_hash: str = Field(default='', max_length=64)
+    briefing_override: str | None = Field(default=None, max_length=1000)
+    narration_mode: Literal['whole', 'briefing'] = 'whole'
+    briefing_nonce: int = Field(default=0, ge=0)
 
 
 class Conversion(BaseModel):
@@ -261,7 +297,7 @@ def cancel(job_id: str):
 
 
 @app.post('/api/jobs/{job_id}/retry')
-def retry(job_id: str):
+def retry(job_id: str, skip_briefings: bool = False):
     job = get(job_id)
     if job.get('stack_id'):
         with db() as conn:
@@ -269,7 +305,13 @@ def retry(job_id: str):
             if active: raise HTTPException(409, 'This Stack Is Already Being Audiofied')
     if job['status'] not in ('failed','cancelled'):
         raise HTTPException(409, 'Only failed or cancelled conversions can be resumed')
-    update(job_id, status='queued', error='')
+    if skip_briefings:
+        article = json.loads(job['article'])
+        if any(d.get('narration_mode') == 'briefing' for d in article.get('documents', [])):
+            raise HTTPException(409, 'Briefing Only Items Need A Briefing. Retry Or Change Them To Whole Article.')
+        article['include_briefings'] = False
+        update(job_id, article=json.dumps(article))
+    update(job_id, status='queued', stage='', error='')
     jobs.put(job_id)
     return get(job_id)
 
@@ -296,6 +338,8 @@ from backend.stacks import register
 register(app, sys.modules[__name__])
 from backend.mobile import register as register_mobile
 mobile_transfers = register_mobile(app, sys.modules[__name__])
+from backend.share import register as register_share
+mobile_sharing = register_share(app, sys.modules[__name__])
 
 if (ROOT/'frontend/dist').exists():
     app.mount('/', StaticFiles(directory=ROOT/'frontend/dist', html=True), name='frontend')

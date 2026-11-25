@@ -4,10 +4,8 @@ from zipfile import ZipFile
 
 def document_text(content, extension):
     if extension == '.pdf':
-        from pypdf import PdfReader
-        reader=PdfReader(BytesIO(content))
-        if reader.is_encrypted: raise ValueError('Encrypted PDFs Are Not Supported')
-        text='\n\n'.join(page.extract_text() or '' for page in reader.pages)
+        from backend.pdf import pdf_article
+        text = pdf_article(content)['original']
     else:
         from docx import Document
         with ZipFile(BytesIO(content)) as archive:

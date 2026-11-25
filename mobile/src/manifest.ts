@@ -1,6 +1,6 @@
 export const MAX_AUDIO_BYTES = 150 * 1024 * 1024;
 export type Chapter = { document: number; title: string; start: number; end: number };
-export type Document = { id: string; title: string; date: string; author: string; url: string; prepared: string };
+export type Document = { briefing_summary?: string; publication?:string; content_type?:string; added_at?:number|null; id: string; title: string; date: string; author: string; url: string; prepared: string };
 export type Manifest = {
   schemaVersion: 1; id: string; stackId: string; revision: number; title: string;
   generatedAt: number; chapters: Chapter[]; documents: Document[];
@@ -18,6 +18,8 @@ export function parseManifest(value: unknown): Manifest {
     || !Array.isArray(m.documents) || m.documents.length > 500
     || !Array.isArray(m.chapters) || m.chapters.length > 501) throw Error('Invalid stack or audio exceeds the 150 MB import limit.');
   for (const d of m.documents) {
+    if (d && (['briefing_summary','publication','content_type'].some(k => d[k as keyof Document] !== undefined && !text(d[k as keyof Document]))
+      || (d.added_at != null && !Number.isFinite(d.added_at)))) throw Error('Invalid document metadata.');
     if (!d || !['id', 'title', 'date', 'author', 'url', 'prepared'].every(k => text(d[k as keyof Document]))) throw Error('Invalid document.');
   }
   let end = 0;

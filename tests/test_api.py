@@ -51,3 +51,21 @@ def test_job_recovery_cancellation_and_resume(tmp_path, monkeypatch):
             if module.get(job_id)['status']=='completed':break
             time.sleep(.02)
         assert module.get(job_id)['status']=='completed'
+
+
+def test_article_download_identifies_app_and_project(monkeypatch):
+    import asyncio
+    import httpx
+
+    def respond(request):
+        agent = request.headers['User-Agent']
+        assert agent.startswith('ReadingStacks/1.0 ')
+        assert 'https://github.com/stephenahiggins/text-to-mp3' in agent
+        return httpx.Response(200, text='<html><p>A bothy is a shelter.</p></html>', headers={'content-type': 'text/html'})
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(module.httpx, 'AsyncClient', lambda **kwargs: original_client(transport=httpx.MockTransport(respond), **kwargs))
+    monkeypatch.setattr(module.socket, 'getaddrinfo', lambda *args: [(2, 1, 6, '', ('185.15.59.224', 443))])
+    content, media_type, encoding = asyncio.run(module.fetch_url('https://en.wikipedia.org/wiki/Bothy'))
+    assert b'A bothy is a shelter.' in content
+    assert media_type == 'text/html'

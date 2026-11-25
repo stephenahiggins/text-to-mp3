@@ -2,6 +2,9 @@ import hashlib
 import json
 import time
 import uuid
+import subprocess
+
+import pytest
 from io import BytesIO
 from zipfile import ZipFile
 
@@ -13,6 +16,7 @@ from fastapi.testclient import TestClient
 from backend import app as core
 from backend.audio import encode
 from backend.mobile import manifest
+from backend import mobile
 from backend.narration import stack_parts
 
 
@@ -27,7 +31,8 @@ def seed_recording(client, tmp_path):
     return jid, audio
 
 
-def test_export_and_scoped_transfer(tmp_path, monkeypatch):
+@pytest.mark.parametrize("oversized", [False, True])
+def test_export_and_scoped_transfer(tmp_path, monkeypatch, oversized):
     for key, value in [('DATA', tmp_path), ('CACHE', tmp_path/'cache'), ('OUTPUT', tmp_path/'output')]:
         monkeypatch.setattr(core, key, value)
     class FakeEngine:
@@ -38,21 +43,42 @@ def test_export_and_scoped_transfer(tmp_path, monkeypatch):
     monkeypatch.setenv('ARTICLE_TRANSFER_HOST', '127.0.0.1')
     with TestClient(core.app) as client:
         jid, audio = seed_recording(client, tmp_path)
+        if oversized:
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+                'sine=frequency=440:duration=30', '-ar', '24000', '-ac', '1',
+                '-b:a', '128k', str(audio)], check=True)
+            monkeypatch.setattr(mobile, 'MAX_FILE_BYTES', 250_000)
+        chapters = [dict(document=0, title='River', start=0, end=30)] if oversized else []
+        if chapters:
+            audio.with_suffix('.chapters.json').write_text(json.dumps(chapters))
+        original = audio.read_bytes()
         exported = client.get(f'/api/jobs/{jid}/stack')
         assert exported.status_code == 200
         with ZipFile(BytesIO(exported.content)) as archive:
             assert set(archive.namelist()) == {'manifest.json', 'audio.mp3'}
             data = json.loads(archive.read('manifest.json'))
             assert data['audio']['sha256'] == hashlib.sha256(archive.read('audio.mp3')).hexdigest()
-            assert data['chapters'] == []  # Old recordings remain importable.
+            exported_audio = archive.read('audio.mp3')
+            assert data['audio']['bytes'] == len(exported_audio)
+            assert len(exported.content) <= mobile.MAX_FILE_BYTES
+            assert data['chapters'] == chapters  # Preserve timings; old files may have none.
             assert str(tmp_path) not in json.dumps(data)
+        assert audio.read_bytes() == original
+        if oversized:
+            assert exported_audio != original
+            prepared, copy = mobile.portable_recording(core, jid)
+            stamp = copy.stat().st_mtime_ns
+            assert mobile.portable_recording(core, jid)[1].stat().st_mtime_ns == stamp
+            duration = float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries',
+                'format=duration', '-of', 'csv=p=0', str(copy)]))
+            assert abs(duration - 30) < .2
         response = client.post(f'/api/jobs/{jid}/send')
         assert response.status_code == 200, response.text
         sent = response.json()
         base = sent['url'].removesuffix('manifest')
         with httpx.Client(trust_env=False) as phone:
             assert phone.get(sent['url']).json() == data
-            assert phone.get(base+'audio').content == audio.read_bytes()
+            assert phone.get(base+'audio').content == exported_audio
             assert phone.get(base+'../../api/stacks').status_code == 404
             assert phone.get(base.replace(sent['token'], 'invalid')+'audio').status_code == 404
             assert client.get('/api/transfers/'+sent['token']).json()['downloadedAt'] is None
@@ -64,6 +90,9 @@ def test_export_and_scoped_transfer(tmp_path, monkeypatch):
             sent2 = client.post(f'/api/jobs/{jid}/send').json()
             client.delete('/api/transfers/'+sent2['token'])
             assert phone.get(sent2['url']).status_code == 404
+        monkeypatch.setattr(mobile, 'MAX_FILE_BYTES', 100)
+        assert client.get(f'/api/jobs/{jid}/stack').status_code == 413
+        assert client.post(f'/api/jobs/{jid}/send').status_code == 413
         assert client.get('/api/config', headers={'Host': '192.168.1.4:8765'}).status_code == 403
     assert core.mobile_transfers.server is None
 
