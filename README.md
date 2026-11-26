@@ -140,7 +140,7 @@ Run the Mac app and open Reading Stacks on your iPhone on the same Wi-Fi. The ph
 
 ## Personal iCloud sync and builds for other users
 
-Use **iPhone Sharing → Send from anywhere with iCloud Drive** to select an empty
+Use **Share by iCloud** to select an empty
 Reading Stacks folder in your own iCloud Drive. Select the same folder in the iPhone
 app's **Mac connection → iCloud Drive** setup. Shares wait for your Mac to be online;
 completed audio returns to the phone's library while its app is open. Automatic

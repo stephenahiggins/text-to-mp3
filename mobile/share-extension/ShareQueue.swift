@@ -604,7 +604,7 @@ struct ShareQueueView: View {
                     }
                 }
                 Section("iCloud Drive") {
-                    Text("On your Mac, open iPhone Sharing and choose an empty folder in iCloud Drive. Then choose the same folder here. Both devices must use the same Apple Account.").font(.footnote)
+                    Text("On your Mac, open Share by iCloud and choose an empty folder in iCloud Drive. Then choose the same folder here. Both devices must use the same Apple Account.").font(.footnote)
                     if queue.cloudEnabled {
                         Text("Connected: " + queue.cloudFolder)
                         Text("Open Reading Stacks to sync shares and completed audio. iCloud transfers may take time; your Mac processes shares when awake.").font(.footnote)

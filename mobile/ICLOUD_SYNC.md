@@ -11,7 +11,7 @@ policy, so saving a request locally is not confirmation that the Mac received it
 ## Set up once
 
 1. Enable iCloud Drive on both devices, signed in to the same Apple Account.
-2. Start the Mac app and open **iPhone Sharing → Send from anywhere with iCloud Drive**.
+2. Start the Mac app and open **Share by iCloud**.
 3. Click **Choose iCloud folder**. In the native picker, create/select a new, empty
    folder called **Reading Stacks** inside iCloud Drive. macOS may ask permission
    for the terminal/Python process to access iCloud Drive. Allow it for this folder.

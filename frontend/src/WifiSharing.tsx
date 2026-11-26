@@ -1,4 +1,3 @@
-import {CloudSync} from './CloudSync';
 import React, {useEffect, useState} from 'react';
 
 async function connection(method = 'GET') {
@@ -7,7 +6,7 @@ async function connection(method = 'GET') {
   return response.json();
 }
 
-export function IPhoneSharing() {
+export function WifiSharing() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [link, setLink] = useState('');
   const [busy, setBusy] = useState(true);
@@ -26,7 +25,7 @@ export function IPhoneSharing() {
       const data = await connection(method);
       setEnabled(method === 'POST');
       setLink(data.connectionLink || '');
-      setMessage(method === 'POST' ? 'Your connection link is ready. Copy it to your iPhone.' : 'iPhone sharing is disconnected.');
+      setMessage(method === 'POST' ? 'Your connection link is ready. Copy it to your iPhone.' : 'Wi-Fi sharing is disconnected.');
     } catch (e) {setError((e as Error).message);}
     finally {setBusy(false);}
   }
@@ -36,9 +35,8 @@ export function IPhoneSharing() {
   }
   return <section className="sharing-page" aria-labelledby="sharing-title">
     <a className="sharing-back" href="#/">← Your Stacks</a>
-    <div className="intro"><p className="eyebrow">IPHONE SHARING</p><h1 id="sharing-title">Save a good read, wherever you find it.</h1>
-      <p>Save articles and PDFs from your iPhone’s share sheet, then sync them through your personal iCloud Drive or send directly over Wi-Fi.</p></div>
-    <CloudSync/>
+    <div className="intro"><p className="eyebrow">WIFI SHARING</p><h1 id="sharing-title">Share over Wifi</h1>
+      <p>Send saved articles and PDFs directly to your Mac when both devices are on the same Wi-Fi network.</p></div>
     <div className="sharing-grid">
       <section className="card sharing-connection" aria-labelledby="connection-title">
         <h2 id="connection-title">Your iPhone finds this Mac automatically</h2>
@@ -54,7 +52,7 @@ export function IPhoneSharing() {
           <p className="hint">Use Universal Clipboard, or privately send this link to your iPhone. Paste it into Mac connection in Saved shares in the iPhone app.</p></div>}
         {enabled && !link && <p className="hint">Your current connection remains active. Create a new link only if you need to connect again.</p>}
         </details>
-        {enabled && <button className="sharing-disconnect" disabled={busy} onClick={() => update('DELETE')}>Disconnect iPhone sharing</button>}
+        {enabled && <button className="sharing-disconnect" disabled={busy} onClick={() => update('DELETE')}>Disconnect Wi-Fi sharing</button>}
         {error && <p className="error" role="alert">{error}</p>}
         <p className="hint" role="status">{message}</p>
       </section>
